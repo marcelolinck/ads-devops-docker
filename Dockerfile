@@ -1,4 +1,5 @@
-FROM node:22
+# FROM node:lts-alpine3.24
+FROM node:lts-trixie-slim
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
