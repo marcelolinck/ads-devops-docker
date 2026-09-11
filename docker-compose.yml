@@ -6,6 +6,13 @@ services:
     # Constrói a imagem a partir do Dockerfile presente no diretório atual (.)
     build: .
 
+    # Sobrescreve o CMD do Dockerfile (que roda "node app.js") para usar o nodemon.
+    # O nodemon observa os arquivos do projeto e reinicia o processo Node sozinho
+    # a cada alteração, então não é mais necessário rodar "docker compose restart"
+    # manualmente. Isso vale só para este ambiente de desenvolvimento (compose);
+    # a imagem buildada para produção continua usando o CMD original do Dockerfile.
+    command: npx nodemon app.js
+
     # Mapeia a porta do container para a porta do host (máquina local)
     # Formato: "PORTA_HOST:PORTA_CONTAINER" — aqui ambas usam a mesma variável NODE_PORTA
     ports:
@@ -17,11 +24,13 @@ services:
       - MYSQL_DB_PORTA=${MYSQL_DB_PORTA}             # Porta usada para acessar o banco MySQL
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}   # Senha do usuário root do MySQL
       - MYSQL_DB_NAME=${MYSQL_DB_NAME}               # Nome do banco de dados a ser usado
+      - REDIS_PORTA=${REDIS_PORTA}                   # Porta do Redis usada para cache
 
-    # Garante que o container "mysql-db" suba antes do "node-app"
-    # (não garante que o MySQL já esteja pronto para aceitar conexões, só que o container iniciou)
+    # Garante que o container "mysql-db" e "redis" subam antes do "node-app"
+    # (não garante que já estejam prontos para aceitar conexões, só que os containers iniciaram)
     depends_on:
       - mysql-db
+      - redis
 
     # Monta o diretório atual do host (.) dentro do container em /app,
     # que é o WORKDIR definido no Dockerfile (onde o "node app.js" realmente roda).
@@ -57,11 +66,27 @@ services:
       # ainda está vazio. Se o volume já existir, os scripts não rodam de novo.
       - ./init-db:/docker-entrypoint-initdb.d
 
+  # Serviço do Redis, usado como cache em memória para reduzir consultas ao MySQL
+  redis:
+    # Imagem oficial do Redis, variante "alpine" (mais leve)
+    image: redis:7-alpine
+
+    # Mapeia a porta do host para a porta padrão do Redis (6379) dentro do container
+    ports:
+      - "${REDIS_PORTA}:6379"
+
+    # Persiste o cache em disco (snapshot) para sobreviver a reinicializações do container.
+    # Não é estritamente necessário para cache (que pode ser efêmero), mas evita
+    # começar com o cache totalmente frio toda vez que o container reinicia.
+    volumes:
+      - redis-data:/data
+
 
 # Declaração dos volumes nomeados usados pelos serviços acima
 # O Docker gerencia esse volume de forma persistente, fora do ciclo de vida do container
 volumes:
   mysql-data:
+  redis-data:
 
 # Configuração de rede personalizada
 # Cria uma rede Docker própria para os serviços se comunicarem entre si pelo nome do serviço

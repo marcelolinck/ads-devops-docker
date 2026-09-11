@@ -1,5 +1,6 @@
 const express = require("express");
 const mysql = require("mysql2/promise");
+const Redis = require("ioredis");
 
 const app = express();
 const pool = mysql.createPool({
@@ -10,20 +11,41 @@ const pool = mysql.createPool({
   database: process.env.MYSQL_DB_NAME,
 });
 
-app.get('/categorias', async (req, res) => {
-  const [rows] = await pool.query('SELECT * FROM categorias');
-  res.json(rows.length);
+const redis = new Redis({
+  host: 'redis',          // nome do container — resolvido pela rede do Docker
+  port: process.env.REDIS_PORTA,
 });
 
-app.listen(3000, "0.0.0.0", () => {
-  console.log("Servidor rodando na porta 3000");
+const CACHE_TTL_SEGUNDOS = 60;
+
+app.get('/categorias', async (req, res) => {
+  const cacheKey = 'categorias';
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return res.json(JSON.parse(cached));
+  }
+
+  const [rows] = await pool.query('SELECT * FROM categorias');
+  await redis.set(cacheKey, JSON.stringify(rows), 'EX', CACHE_TTL_SEGUNDOS);
+  res.json(rows);
 });
 
 app.get('/produtos', async (req, res) => {
+  const cacheKey = 'produtos';
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return res.json(JSON.parse(cached));
+  }
+
   const [rows] = await pool.query(`
     SELECT p.id, p.nome, p.preco, p.quantidade_estoque, c.nome AS categoria
     FROM produtos p
     JOIN categorias c ON p.categoria_id = c.id
   `);
-  res.json(rows.length);
+  await redis.set(cacheKey, JSON.stringify(rows), 'EX', CACHE_TTL_SEGUNDOS);
+  res.json(rows);
+});
+
+app.listen(3000, "0.0.0.0", () => {
+  console.log("Servidor rodando na porta 3000");
 });
