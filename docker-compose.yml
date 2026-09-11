@@ -1,0 +1,70 @@
+# Define os serviços (containers) que compõem a aplicação
+services:
+
+  # Serviço da aplicação Node.js
+  node-app:
+    # Constrói a imagem a partir do Dockerfile presente no diretório atual (.)
+    build: .
+
+    # Mapeia a porta do container para a porta do host (máquina local)
+    # Formato: "PORTA_HOST:PORTA_CONTAINER" — aqui ambas usam a mesma variável NODE_PORTA
+    ports:
+      - "${NODE_PORTA}:${NODE_PORTA}"
+
+    # Variáveis de ambiente injetadas dentro do container, lidas do arquivo .env
+    environment:
+      - NODE_PORTA=${NODE_PORTA}                    # Porta em que a aplicação Node vai rodar
+      - MYSQL_DB_PORTA=${MYSQL_DB_PORTA}             # Porta usada para acessar o banco MySQL
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}   # Senha do usuário root do MySQL
+      - MYSQL_DB_NAME=${MYSQL_DB_NAME}               # Nome do banco de dados a ser usado
+
+    # Garante que o container "mysql-db" suba antes do "node-app"
+    # (não garante que o MySQL já esteja pronto para aceitar conexões, só que o container iniciou)
+    depends_on:
+      - mysql-db
+
+    # Monta o diretório atual do host (.) dentro do container em /app,
+    # que é o WORKDIR definido no Dockerfile (onde o "node app.js" realmente roda).
+    # Isso sincroniza o código local com o container: ao editar um arquivo,
+    # o container enxerga a mudança sem precisar rebuildar a imagem.
+    volumes:
+      - .:/app
+      # Evita que o node_modules do host sobrescreva o node_modules instalado
+      # dentro do container (que pode ter binários específicos da imagem Linux)
+      - /app/node_modules
+
+  # Serviço do banco de dados MySQL
+  mysql-db:
+    # Usa a imagem oficial do MySQL, versão 8.0, do Docker Hub
+    image: mysql:8.0
+
+    # Variáveis de ambiente específicas da imagem oficial do MySQL
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}  # Define a senha do usuário root ao criar o container
+      MYSQL_DATABASE: ${MYSQL_DB_NAME}              # Cria automaticamente esse banco de dados na inicialização
+
+    # Mapeia a porta do host para a porta padrão do MySQL (3306) dentro do container
+    ports:
+      - "${MYSQL_DB_PORTA}:3306"
+
+    # Associa um volume nomeado (mysql-data) ao diretório de dados do MySQL
+    # Isso garante que os dados persistam mesmo se o container for removido/recriado
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # Monta os scripts SQL de inicialização. A imagem oficial do MySQL executa
+      # automaticamente qualquer arquivo .sql/.sh dessa pasta (em ordem alfabética),
+      # mas SOMENTE na primeira inicialização, ou seja, quando o volume mysql-data
+      # ainda está vazio. Se o volume já existir, os scripts não rodam de novo.
+      - ./init-db:/docker-entrypoint-initdb.d
+
+
+# Declaração dos volumes nomeados usados pelos serviços acima
+# O Docker gerencia esse volume de forma persistente, fora do ciclo de vida do container
+volumes:
+  mysql-data:
+
+# Configuração de rede personalizada
+# Cria uma rede Docker própria para os serviços se comunicarem entre si pelo nome do serviço
+networks:
+  default:
+    name: ads-devops-docker-network
