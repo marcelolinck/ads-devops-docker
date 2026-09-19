@@ -12,7 +12,7 @@ const pool = mysql.createPool({
 
 app.get('/categorias', async (req, res) => {
   const [rows] = await pool.query('SELECT * FROM categorias');
-  res.json(rows.length);
+  res.json(rows);
 });
 
 app.listen(3000, "0.0.0.0", () => {
@@ -25,5 +25,5 @@ app.get('/produtos', async (req, res) => {
     FROM produtos p
     JOIN categorias c ON p.categoria_id = c.id
   `);
-  res.json(rows.length);
+  res.json(rows);
 });
